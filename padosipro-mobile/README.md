@@ -76,7 +76,7 @@ Replace that example address with your actual address. The phone and computer mu
 
 `api/api.ts` reads `process.env.EXPO_PUBLIC_API_URL`. If it is missing or empty, the app reports a configuration error. Your local `.env` is ignored by Git; `.env.example` provides the setup template.
 
-After changing the URL, fully reload the app to use the new value. Expo includes `EXPO_PUBLIC_` values in the app bundle, so these variables are for public configuration such as this URL, not passwords or private keys. See [Expo environment variables](https://docs.expo.dev/guides/environment-variables/).
+During development, fully reload the app after changing the URL. For an installed preview APK, update the build configuration and rebuild/reinstall the APK as described below. Expo includes `EXPO_PUBLIC_` values in the app bundle, so these variables are for public configuration such as this URL, not passwords or private keys. See [Expo environment variables](https://docs.expo.dev/guides/environment-variables/).
 
 ### 4. Start the app
 
@@ -93,6 +93,100 @@ Available platform commands:
 | `npm run ios` | Start Expo and open an available iOS target |
 
 The platform commands start the development server; they do not produce an APK or a store release. Use an Expo client or development build compatible with the project's SDK and dependencies. Check the [Expo development guide](https://docs.expo.dev/get-started/start-developing/) for device setup.
+
+## Build and download an Android APK
+
+EAS Build creates the APK in Expo's cloud. Run the following commands from the project folder. You need an Expo account with access to the linked EAS project.
+
+### 1. Log in and check build setup
+
+```bash
+npx eas-cli@latest login
+```
+
+This project already contains `eas.json` and an EAS project ID in `app.json`. If setting up a new project without EAS configuration, run:
+
+```bash
+npx eas-cli@latest build:configure
+```
+
+Select Android and follow the setup prompts. See the [EAS setup guide](https://docs.expo.dev/build/setup/).
+
+### 2. Set the backend URL for the APK
+
+In `eas.json`, update only `build.preview`, keeping the other profiles and settings:
+
+```json
+"preview": {
+  "distribution": "internal",
+  "android": {
+    "buildType": "apk"
+  },
+  "env": {
+    "EXPO_PUBLIC_API_URL": "https://your-backend.example.com/api"
+  }
+}
+```
+
+Replace the example with your actual backend URL, including `/api`. The current preview profile uses `http://localhost:3000/api`; change it before building for a physical phone. On a phone, `localhost` refers to the phone itself, not your computer.
+
+The local `.env` file is ignored by Git and is not uploaded by the default EAS workflow. The `preview.env` setting supplies the API URL for this cloud build. The backend must remain available when the installed app makes requests.
+
+### 3. Optional: connect the APK to a local backend
+
+Skip this step if you use a hosted HTTPS backend.
+
+1. Connect the phone and backend computer to the same Wi-Fi network.
+2. Start the backend on port `3000`, listening on `0.0.0.0` so other devices can connect. Allow the backend through Windows Firewall on the private network.
+3. Run `ipconfig` on Windows. Find the IPv4 address of the active Wi-Fi adapter, not a disconnected or virtual adapter.
+4. If the address is `192.168.1.10`, use `http://192.168.1.10:3000/api` in both `.env` and `eas.json` under `build.preview.env.EXPO_PUBLIC_API_URL`. Replace this example IP with your current address.
+5. Open `http://192.168.1.10:3000/api/v1/tasks/search?search=washing` in the phone's browser. A JSON response confirms the phone can reach the backend. If it does not load, check the IP, server binding, firewall, and whether the Wi-Fi network allows devices to communicate.
+
+For an Android APK using local HTTP, install the Expo configuration plugin:
+
+```bash
+npx expo install expo-build-properties
+```
+
+Append this entry to the existing `expo.plugins` array in `app.json`; keep the other plugin entries:
+
+```json
+[
+  "expo-build-properties",
+  {
+    "android": {
+      "usesCleartextTraffic": true
+    }
+  }
+]
+```
+
+This allows unencrypted HTTP for local testing. Use HTTPS and remove this exception for production. The plugin is not currently installed or configured in this project; these are setup instructions. See [Expo BuildProperties](https://docs.expo.dev/versions/v57.0.0/sdk/build-properties/#pluginconfigtypeandroid).
+
+Keep the computer and backend running while using the app. If the computer's IP changes, update the URL and rebuild the APK. A successful browser check verifies connectivity; the APK still needs the HTTP configuration above.
+
+### 4. Build the APK
+
+After configuring the backend URL and, if needed, local HTTP support, run:
+
+```bash
+npx eas-cli@latest build --platform android --profile preview
+```
+
+If EAS asks to generate a new Android keystore for this app's first build, choose **Yes**. If credentials already exist for the app, reuse them. EAS signs the build and prints a build-details link.
+
+The `preview` profile requests an installable `.apk`. The `production` profile normally produces an Android App Bundle (`.aab`) for Google Play instead. See [Expo's APK guide](https://docs.expo.dev/build-reference/apk/).
+
+### 5. Download and install
+
+- If the status is **Queued** or **In progress**, wait for it to finish.
+- After **Build finished**, open the build link printed in the terminal and download the APK.
+- You can also open the [Expo dashboard](https://expo.dev/), select the project, open **Builds**, and select the completed Android preview build to download it.
+- Open the downloaded APK on your Android phone and follow the installation prompt. Android may ask you to allow installation from the browser or file manager used to open it.
+
+The APK is built remotely and is not automatically saved in this project's folder. A failed build has no completed APK to download; inspect the build logs on its details page.
+
+This preview APK includes the app's JavaScript and does not need the Expo development server running. It still needs the configured backend. Editing `.env` after installation does not change the URL inside that APK; update the preview configuration, rebuild, and install the new APK.
 
 ## Main user flow
 
@@ -155,6 +249,7 @@ Saving a selection sends:
 
 ```text
 .env.example                       Example API URL configuration
+eas.json                           Cloud build profiles and preview API URL
 api/api.ts                         Axios environment configuration and auth header
 src/app/_layout.tsx                Root navigation and UI provider
 src/app/(auth)/                    Login, registration, and OTP screens
@@ -201,4 +296,4 @@ Manual checks still needed:
 - Update provider-oriented wording such as "Your business" to match the assignment's customer flow.
 - Fix the existing lint error and complete device testing.
 - Add `DESIGN.md` for assignment decisions and tradeoffs.
-- Configure an Android build and provide the required APK. This repository does not currently include an `eas.json` build configuration.
+- Configure a device-reachable preview backend URL, then verify and provide the required APK. The EAS preview profile is present; APK completion and installation have not been verified here.
